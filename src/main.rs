@@ -2,7 +2,7 @@
 
 use std::fmt::Display;
 
-use bit_vec::BitVec;
+use bitvec::prelude::*;
 
 #[derive(Debug)]
 enum Register {
@@ -25,7 +25,7 @@ enum Register {
 }
 
 impl Register {
-    pub fn from_bv(bv: &BitVec, wide: bool) -> Self {
+    pub fn from_bv<T: BitOrder>(bv: &BitSlice<u8, T>, wide: bool) -> Self {
         let f = bv[0];
         let s = bv[1];
         let t = bv[2];
@@ -73,13 +73,12 @@ fn slice(bv: &BitVec, start: usize, len: usize) -> BitVec {
     bv
 }
 
-fn disassemble(mut input: BitVec) -> String {
+fn disassemble<T: BitOrder>(mut input: &BitSlice<u8, T>) -> String {
     let mut strs: Vec<String> = Vec::new();
-    while input.len() >= 16 {
-        let current = input.clone();
-        input = input.split_off(16);
-        let op = slice(&current, 0, 6);
-        let mov_op = slice(&BitVec::from_bytes(&[0b100010]), 2, 6);
+    for i in (0..input.len()).step_by(16) {
+        let current = &input[i..i+16];
+        let op = &current[0..6];
+        let mov_op = &[0b100010 as u8].view_bits::<Msb0>()[2..];
         let opcode = if op == mov_op {
             "mov".to_string()
         } else {
@@ -93,31 +92,25 @@ fn disassemble(mut input: BitVec) -> String {
         // 11 = register to register
         // 00 = memory to memory
         // Otherwise, register to memory
-        let r#mod = slice(&current, 8, 2);
-        assert_eq!(r#mod, slice(&BitVec::from_bytes(&[0b11]), 6, 2));
-        let reg = Register::from_bv(&slice(&current, 10, 3), w);
-        let rm = Register::from_bv(&slice(&current, 13, 3), w);
-        let (src, dest) = if d { (rm, reg) } else { (reg, rm) };
+        let r#mod = &current[8..10];
+        assert_eq!(r#mod, &[0b11 as u8].view_bits::<Msb0>()[6..8]);
+        let reg = Register::from_bv(&current[10..13], *w);
+        let rm  = Register::from_bv(&current[13..16], *w);
+        let (src, dest) = if *d { (rm, reg) } else { (reg, rm) };
 
         strs.push(format!("{} {}, {}", opcode, dest, src));
     }
     strs.join("\n")
 }
 
-// fn to_bits(input: &[u8]) -> Vec<bool> {
-//     input.into_iter()
-//         .flat_map(|b| vec![b >> 3, b >> 2])
-//         .collect()
-// }
-
 fn main() {
     let input = std::fs::read("perfaware/part1/listing_0037_single_register_mov").unwrap();
-    let bits = BitVec::from_bytes(&input);
+    let bits = input.view_bits::<Msb0>();
     let output = disassemble(bits);
     println!("{output}");
     println!("----------");
     let input = std::fs::read("perfaware/part1/listing_0038_many_register_mov").unwrap();
-    let bits = BitVec::from_bytes(&input);
+    let bits = input.view_bits::<Msb0>();
     let output = disassemble(bits);
     println!("{output}");
 }
