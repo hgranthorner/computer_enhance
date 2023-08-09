@@ -25,7 +25,7 @@ enum Register {
 }
 
 impl Register {
-    pub fn from_bv<T: BitOrder>(bv: &BitSlice<u8, T>, wide: bool) -> Self {
+    pub fn from_bv(bv: &BitSlice<u8, Msb0>, wide: bool) -> Self {
         let f = bv[0];
         let s = bv[1];
         let t = bv[2];
@@ -66,7 +66,7 @@ impl Display for Register {
     }
 }
 
-pub fn disassemble<T: BitOrder>(mut input: &BitSlice<u8, T>) -> String {
+pub fn disassemble(mut input: &BitSlice<u8, Msb0>) -> String {
     let mut strs: Vec<String> = Vec::new();
     for i in (0..input.len()).step_by(16) {
         let current = &input[i..i + 16];
