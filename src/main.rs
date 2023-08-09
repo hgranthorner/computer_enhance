@@ -66,13 +66,6 @@ impl Display for Register {
     }
 }
 
-fn slice(bv: &BitVec, start: usize, len: usize) -> BitVec {
-    let mut bv = bv.clone();
-    let mut bv = bv.split_off(start);
-    bv.split_off(len);
-    bv
-}
-
 pub fn disassemble<T: BitOrder>(mut input: &BitSlice<u8, T>) -> String {
     let mut strs: Vec<String> = Vec::new();
     for i in (0..input.len()).step_by(16) {
