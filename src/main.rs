@@ -141,7 +141,7 @@ mod tests {
         let actual = disassemble(bits);
 
         // Assert
-        assert_eq!(actual, expected.to_string());
+        assert_eq!(actual, expected);
     }
 
     #[test]
@@ -156,6 +156,6 @@ mod tests {
         let actual = disassemble(bits);
 
         // Assert
-        assert_eq!(actual, expected.to_string());
+        assert_eq!(actual, expected);
     }
 }
