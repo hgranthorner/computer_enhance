@@ -66,6 +66,33 @@ impl Display for Register {
     }
 }
 
+struct Instruction {
+    pub opcode: [bool; 6],
+    pub d: bool,
+    pub w: bool,
+    pub r#mod: [bool; 2],
+    pub reg: [bool; 3],
+    pub rm: [bool; 3],
+}
+
+impl Instruction {
+    pub fn opcode_name(&self) -> String {
+        todo!("Implement opcode -> name conversion")
+    }
+
+    pub fn src_reg(&self) -> Register {
+        todo!("Implement reg bits -> register")
+    }
+
+    pub fn dest_reg(&self) -> Register {
+        todo!("Implement reg bits -> register")
+    }
+
+    pub fn to_asm(&self) -> String {
+        format!("{} {}, {}", self.opcode_name(), self.dest_reg(), self.src_reg())
+    }
+}
+
 pub fn disassemble(input: &BitSlice<u8, Msb0>) -> String {
     let mut strs: Vec<String> = Vec::new();
     for i in (0..input.len()).step_by(16) {
@@ -120,8 +147,7 @@ mod tests {
             .skip_while(|l| !l.starts_with("bits"))
             .skip(2);
         let mut result = lines.next().unwrap().to_string();
-        for line in lines 
-        {
+        for line in lines {
             result.push_str("\n");
             result.push_str(line);
         }
