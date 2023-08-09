@@ -73,10 +73,10 @@ fn slice(bv: &BitVec, start: usize, len: usize) -> BitVec {
     bv
 }
 
-fn disassemble<T: BitOrder>(mut input: &BitSlice<u8, T>) -> String {
+pub fn disassemble<T: BitOrder>(mut input: &BitSlice<u8, T>) -> String {
     let mut strs: Vec<String> = Vec::new();
     for i in (0..input.len()).step_by(16) {
-        let current = &input[i..i+16];
+        let current = &input[i..i + 16];
         let op = &current[0..6];
         let mov_op = &[0b100010 as u8].view_bits::<Msb0>()[2..];
         let opcode = if op == mov_op {
@@ -95,7 +95,7 @@ fn disassemble<T: BitOrder>(mut input: &BitSlice<u8, T>) -> String {
         let r#mod = &current[8..10];
         assert_eq!(r#mod, &[0b11 as u8].view_bits::<Msb0>()[6..8]);
         let reg = Register::from_bv(&current[10..13], *w);
-        let rm  = Register::from_bv(&current[13..16], *w);
+        let rm = Register::from_bv(&current[13..16], *w);
         let (src, dest) = if *d { (rm, reg) } else { (reg, rm) };
 
         strs.push(format!("{} {}, {}", opcode, dest, src));
@@ -113,4 +113,56 @@ fn main() {
     let bits = input.view_bits::<Msb0>();
     let output = disassemble(bits);
     println!("{output}");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn skip_preamble(s: &str) -> String {
+        let contents = std::fs::read_to_string(s).unwrap();
+
+        let mut lines = contents
+            .lines()
+            .skip_while(|l| !l.starts_with("bits"))
+            .skip(2);
+        let mut result = lines.next().unwrap().to_string();
+        for line in lines 
+        {
+            result.push_str("\n");
+            result.push_str(line);
+        }
+
+        result
+    }
+
+    #[test]
+    fn correctly_handles_single_register_mov() {
+        // Arrange
+        let input = std::fs::read("perfaware/part1/listing_0037_single_register_mov").unwrap();
+        let bits = input.view_bits::<Msb0>();
+
+        let expected = skip_preamble("perfaware/part1/listing_0037_single_register_mov.asm");
+
+        // Act
+        let actual = disassemble(bits);
+
+        // Assert
+        assert_eq!(actual, expected.to_string());
+    }
+
+    #[test]
+    fn correctly_handles_many_register_mov() {
+        // Arrange
+        let input = std::fs::read("perfaware/part1/listing_0038_many_register_mov").unwrap();
+        let bits = input.view_bits::<Msb0>();
+
+        let expected = skip_preamble("perfaware/part1/listing_0038_many_register_mov.asm");
+
+        // Act
+        let actual = disassemble(bits);
+
+        // Assert
+        assert_eq!(actual, expected.to_string());
+    }
 }
