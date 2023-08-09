@@ -66,12 +66,12 @@ impl Display for Register {
     }
 }
 
-pub fn disassemble(mut input: &BitSlice<u8, Msb0>) -> String {
+pub fn disassemble(input: &BitSlice<u8, Msb0>) -> String {
     let mut strs: Vec<String> = Vec::new();
     for i in (0..input.len()).step_by(16) {
         let current = &input[i..i + 16];
         let op = &current[0..6];
-        let mov_op = &[0b100010 as u8].view_bits::<Msb0>()[2..];
+        let mov_op = &[0b100010_u8].view_bits::<Msb0>()[2..];
         let opcode = if op == mov_op {
             "mov".to_string()
         } else {
@@ -86,7 +86,7 @@ pub fn disassemble(mut input: &BitSlice<u8, Msb0>) -> String {
         // 00 = memory to memory
         // Otherwise, register to memory
         let r#mod = &current[8..10];
-        assert_eq!(r#mod, &[0b11 as u8].view_bits::<Msb0>()[6..8]);
+        assert_eq!(r#mod, &[0b11_u8].view_bits::<Msb0>()[6..8]);
         let reg = Register::from_bv(&current[10..13], *w);
         let rm = Register::from_bv(&current[13..16], *w);
         let (src, dest) = if *d { (rm, reg) } else { (reg, rm) };
