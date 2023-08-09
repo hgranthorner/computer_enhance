@@ -1,3 +1,4 @@
+#![feature(unchecked_math)]
 #![allow(dead_code, unused)]
 
 use std::fmt::Display;
@@ -25,11 +26,8 @@ enum Register {
 }
 
 impl Register {
-    pub fn from_bv(bv: &BitSlice<u8, Msb0>, wide: bool) -> Self {
-        let f = bv[0];
-        let s = bv[1];
-        let t = bv[2];
-        match (f, s, t, wide) {
+    pub fn from_bits(bits: &[bool; 3], wide: bool) -> Self {
+        match (bits[0], bits[1], bits[2], wide) {
             (false, false, false, false) => Self::AL,
             (false, false, false, true) => Self::AX,
             (true, false, false, false) => Self::AH,
@@ -53,8 +51,6 @@ impl Register {
             (true, true, false, false) => Self::DH,
 
             (true, true, false, true) => Self::SI,
-
-            _ => panic!("Invalid BitVec {:?}!", bv),
         }
     }
 }
@@ -76,20 +72,58 @@ struct Instruction {
 }
 
 impl Instruction {
-    pub fn opcode_name(&self) -> String {
-        todo!("Implement opcode -> name conversion")
+    pub fn opcode_name(&self) -> &str {
+        match self.opcode {
+            // 100010
+            [true, false, false, false, true, false] => "mov",
+            _ => unimplemented!("opcode not supported: {:?}", self.opcode),
+        }
     }
 
     pub fn src_reg(&self) -> Register {
-        todo!("Implement reg bits -> register")
+        if self.d {
+            Register::from_bits(&self.rm, self.w)
+        } else {
+            Register::from_bits(&self.reg, self.w)
+        }
     }
 
     pub fn dest_reg(&self) -> Register {
-        todo!("Implement reg bits -> register")
+        if self.d {
+            Register::from_bits(&self.reg, self.w)
+        } else {
+            Register::from_bits(&self.rm, self.w)
+        }
     }
 
     pub fn to_asm(&self) -> String {
-        format!("{} {}, {}", self.opcode_name(), self.dest_reg(), self.src_reg())
+        format!(
+            "{} {}, {}",
+            self.opcode_name(),
+            self.dest_reg(),
+            self.src_reg()
+        )
+    }
+}
+
+#[derive(Debug)]
+struct ParseInstructionError;
+
+impl<'a> TryFrom<&'a BitSlice<u8, Msb0>> for Instruction {
+    type Error = ParseInstructionError;
+
+    fn try_from(bits: &'a BitSlice<u8, Msb0>) -> Result<Self, Self::Error> {
+        if bits.len() < 16 {
+            return Err(ParseInstructionError);
+        }
+        Ok(Self {
+            opcode: [bits[0], bits[1], bits[2], bits[3], bits[4], bits[5]],
+            d: bits[6],
+            w: bits[7],
+            r#mod: [bits[8], bits[9]],
+            reg: [bits[10], bits[11], bits[12]],
+            rm: [bits[13], bits[14], bits[15]],
+        })
     }
 }
 
@@ -97,33 +131,14 @@ pub fn disassemble(input: &BitSlice<u8, Msb0>) -> String {
     let mut strs: Vec<String> = Vec::new();
     for i in (0..input.len()).step_by(16) {
         let current = &input[i..i + 16];
-        let op = &current[0..6];
-        let mov_op = &[0b100010_u8].view_bits::<Msb0>()[2..];
-        let opcode = if op == mov_op {
-            "mov".to_string()
-        } else {
-            "not mov".to_string()
-        };
+        let instruction = Instruction::try_from(current).unwrap();
 
-        // Destination is in reg field?
-        let d = current.get(6).unwrap();
-        // Instruction on word sized data?
-        let w = current.get(7).unwrap();
-        // 11 = register to register
-        // 00 = memory to memory
-        // Otherwise, register to memory
-        let r#mod = &current[8..10];
-        assert_eq!(r#mod, &[0b11_u8].view_bits::<Msb0>()[6..8]);
-        let reg = Register::from_bv(&current[10..13], *w);
-        let rm = Register::from_bv(&current[13..16], *w);
-        let (src, dest) = if *d { (rm, reg) } else { (reg, rm) };
-
-        strs.push(format!("{} {}, {}", opcode, dest, src));
+        strs.push(format!("{}", instruction.to_asm()));
     }
     strs.join("\n")
 }
 
-fn main() {
+fn _main() {
     let input = std::fs::read("perfaware/part1/listing_0037_single_register_mov").unwrap();
     let bits = input.view_bits::<Msb0>();
     let output = disassemble(bits);
@@ -133,6 +148,19 @@ fn main() {
     let bits = input.view_bits::<Msb0>();
     let output = disassemble(bits);
     println!("{output}");
+}
+
+fn main() {
+    unsafe {
+        let x: u8 = 10;
+        let y: u8 = 255;
+        println!("{}", y.unchecked_shl(17));
+        println!("{}", x);
+        let z: *const u8 = &y;
+        let x_ptr: *const u8 = &x;
+        println!("{:?}", z);
+        println!("{:?}", x_ptr);
+    }
 }
 
 #[cfg(test)]
@@ -160,12 +188,9 @@ mod tests {
         // Arrange
         let input = std::fs::read("perfaware/part1/listing_0037_single_register_mov").unwrap();
         let bits = input.view_bits::<Msb0>();
-
         let expected = skip_preamble("perfaware/part1/listing_0037_single_register_mov.asm");
-
         // Act
         let actual = disassemble(bits);
-
         // Assert
         assert_eq!(actual, expected);
     }
@@ -175,12 +200,9 @@ mod tests {
         // Arrange
         let input = std::fs::read("perfaware/part1/listing_0038_many_register_mov").unwrap();
         let bits = input.view_bits::<Msb0>();
-
         let expected = skip_preamble("perfaware/part1/listing_0038_many_register_mov.asm");
-
         // Act
         let actual = disassemble(bits);
-
         // Assert
         assert_eq!(actual, expected);
     }
