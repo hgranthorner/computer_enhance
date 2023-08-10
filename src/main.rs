@@ -93,7 +93,7 @@ impl<'a> From<&'a [bool; 2]> for Mode {
 }
 
 #[derive(Debug)]
-enum Instruction_ {
+enum Instruction {
     RegisterMemoryMov {
         d: bool,
         wide: bool,
@@ -111,25 +111,25 @@ enum Instruction_ {
     },
 }
 
-impl Instruction_ {
+impl Instruction {
     pub fn bytes(&self) -> u8 {
         match self {
-            Instruction_::RegisterMemoryMov { bytes_used, .. } => *bytes_used,
-            Instruction_::ImmediateRegisterMov { bytes_used, .. } => *bytes_used,
+            Instruction::RegisterMemoryMov { bytes_used, .. } => *bytes_used,
+            Instruction::ImmediateRegisterMov { bytes_used, .. } => *bytes_used,
         }
     }
 
     pub fn opcode_name(&self) -> &str {
         match self {
-            Instruction_::RegisterMemoryMov { .. } => "mov",
-            Instruction_::ImmediateRegisterMov { .. } => "mov",
+            Instruction::RegisterMemoryMov { .. } => "mov",
+            Instruction::ImmediateRegisterMov { .. } => "mov",
             _ => unimplemented!("{:?}", self),
         }
     }
 
     pub fn to_asm(&self) -> String {
         match self {
-            Instruction_::RegisterMemoryMov {
+            Instruction::RegisterMemoryMov {
                 d,
                 wide,
                 r#mod,
@@ -174,7 +174,7 @@ impl Instruction_ {
                 format!("{} {}, {}", self.opcode_name(), dest, src)
             }
 
-            Instruction_::ImmediateRegisterMov { reg, data, .. } => {
+            Instruction::ImmediateRegisterMov { reg, data, .. } => {
                 format!("{} {}, {}", self.opcode_name(), reg, data)
             }
         }
@@ -231,7 +231,7 @@ impl Instruction_ {
 
     fn try_parse_immediate_register_mov(
         bits: &BitSlice<u8, Msb0>,
-    ) -> Result<Instruction_, ParseInstructionError> {
+    ) -> Result<Instruction, ParseInstructionError> {
         if bits.len() < 16 {
             return Err(ParseInstructionError::new(
                 "Incoming bits has less than 16 bits!",
@@ -272,7 +272,7 @@ impl ParseInstructionError {
     }
 }
 
-impl<'a> TryFrom<&'a BitSlice<u8, Msb0>> for Instruction_ {
+impl<'a> TryFrom<&'a BitSlice<u8, Msb0>> for Instruction {
     type Error = ParseInstructionError;
 
     fn try_from(bits: &BitSlice<u8, Msb0>) -> Result<Self, Self::Error> {
@@ -286,21 +286,21 @@ impl<'a> TryFrom<&'a BitSlice<u8, Msb0>> for Instruction_ {
 
 pub fn disassemble(input: &BitSlice<u8, Msb0>) -> String {
     let mut strs: Vec<String> = Vec::new();
-    let mut i = 0;
-    while i < input.len() {
-        let end = if input[i..].len() >= 32 {
+    let mut bit_ptr = 0;
+    while bit_ptr < input.len() {
+        let end = if input[bit_ptr..].len() >= 32 {
             32
-        } else if input[i..].len() >= 24 {
+        } else if input[bit_ptr..].len() >= 24 {
             24
         } else {
             16
         };
-        let current = &input[i..i + end];
-        let instruction = Instruction_::try_from(current).unwrap();
+        let current = &input[bit_ptr..bit_ptr + end];
+        let instruction = Instruction::try_from(current).unwrap();
 
         strs.push(instruction.to_asm().to_string());
 
-        i += instruction.bytes() as usize * 8;
+        bit_ptr += instruction.bytes() as usize * 8;
     }
     strs.join("\n")
 }
@@ -312,6 +312,11 @@ fn main() {
     println!("{output}");
     println!("----------");
     let input = std::fs::read("perfaware/part1/listing_0038_many_register_mov").unwrap();
+    let bits = input.view_bits::<Msb0>();
+    let output = disassemble(bits);
+    println!("{output}");
+    println!("----------");
+    let input = std::fs::read("perfaware/part1/listing_0039_more_movs").unwrap();
     let bits = input.view_bits::<Msb0>();
     let output = disassemble(bits);
     println!("{output}");
