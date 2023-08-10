@@ -189,7 +189,7 @@ impl Instruction {
                     let effective_address = deserialize_effective_address(rm, *r#mod, *disp);
                     let disp_str = deserialize_displacement(*r#mod, *disp, *wide, signed_output);
 
-                    if effective_address.starts_with("[") {
+                    if effective_address.starts_with('[') {
                         effective_address
                     } else {
                         format!("[{}{}]", effective_address, disp_str)
@@ -330,7 +330,7 @@ impl<'a> TryFrom<&'a BitSlice<u8, Msb0>> for Instruction {
     }
 }
 
-pub fn disassemble(input: &BitSlice<u8, Msb0>) -> String {
+pub fn disassemble(input: &BitSlice<u8, Msb0>, signed_output: bool) -> String {
     let mut strs: Vec<String> = Vec::new();
     let mut bit_ptr = 0;
     while bit_ptr < input.len() {
@@ -344,7 +344,7 @@ pub fn disassemble(input: &BitSlice<u8, Msb0>) -> String {
         let current = &input[bit_ptr..bit_ptr + end];
         let instruction = Instruction::try_from(current).unwrap();
 
-        strs.push(instruction.to_asm(false).to_string());
+        strs.push(instruction.to_asm(signed_output).to_string());
 
         bit_ptr += instruction.bytes() as usize * 8;
     }
@@ -364,7 +364,7 @@ fn main() {
     // println!("----------");
     let input = std::fs::read("perfaware/part1/listing_0039_more_movs").unwrap();
     let bits = input.view_bits::<Msb0>();
-    let output = disassemble(bits);
+    let output = disassemble(bits, false);
     println!("{output}");
 }
 
@@ -389,7 +389,7 @@ mod tests {
         let bits = input.view_bits::<Msb0>();
         let expected = skip_preamble("perfaware/part1/listing_0037_single_register_mov.asm");
         // Act
-        let actual = disassemble(bits);
+        let actual = disassemble(bits, false);
         // Assert
         assert_eq!(actual, expected);
     }
@@ -401,7 +401,7 @@ mod tests {
         let bits = input.view_bits::<Msb0>();
         let expected = skip_preamble("perfaware/part1/listing_0038_many_register_mov.asm");
         // Act
-        let actual = disassemble(bits);
+        let actual = disassemble(bits, false);
         // Assert
         assert_eq!(actual, expected);
     }
@@ -413,7 +413,7 @@ mod tests {
         let bits = input.view_bits::<Msb0>();
         let expected = skip_preamble("perfaware/part1/listing_0039_more_movs.asm");
         // Act
-        let actual = disassemble(bits);
+        let actual = disassemble(bits, false);
         // Assert
         assert_eq!(actual, expected);
     }
