@@ -5,7 +5,7 @@ use std::fmt::Display;
 
 use bitvec::prelude::*;
 
-#[derive(Debug)]
+#[derive(Copy, Clone, Debug)]
 enum Register {
     AL,
     AH,
@@ -62,7 +62,7 @@ impl Display for Register {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 enum Mode {
     Memory,
     Bit8,
@@ -93,44 +93,165 @@ impl<'a> From<&'a [bool; 2]> for Mode {
 }
 
 #[derive(Debug)]
-struct Instruction {
-    pub opcode: [bool; 6],
-    pub d: bool,
-    pub w: bool,
-    pub r#mod: Mode,
-    pub reg: [bool; 3],
-    pub rm: [bool; 3],
-    pub disp: Option<u16>,
-    pub bytes_used: u8,
+enum Instruction_ {
+    RegisterMemoryMov {
+        d: bool,
+        wide: bool,
+        r#mod: Mode,
+        reg: Register,
+        rm: [bool; 3],
+        disp: Option<u16>,
+        bytes_used: u8,
+    },
+    ImmediateRegisterMov {
+        wide: bool,
+        reg: Register,
+        data: u16,
+        bytes_used: u8,
+    },
 }
 
-impl Instruction {
+impl Instruction_ {
+    pub fn bytes(&self) -> u8 {
+        match self {
+            Instruction_::RegisterMemoryMov { bytes_used, .. } => *bytes_used,
+            Instruction_::ImmediateRegisterMov { bytes_used, .. } => *bytes_used,
+        }
+    }
+
     pub fn opcode_name(&self) -> &str {
-        match self.opcode {
-            // 100010
-            [true, false, false, false, true, false] => "mov",
-            _ => unimplemented!("opcode not supported: {:?}", self.opcode),
-        }
-    }
-
-    pub fn src(&self) -> Register {
-        if self.d {
-            Register::from_bits(&self.rm, self.w)
-        } else {
-            Register::from_bits(&self.reg, self.w)
-        }
-    }
-
-    pub fn dest(&self) -> Register {
-        if self.d {
-            Register::from_bits(&self.reg, self.w)
-        } else {
-            Register::from_bits(&self.rm, self.w)
+        match self {
+            Instruction_::RegisterMemoryMov { .. } => "mov",
+            Instruction_::ImmediateRegisterMov { .. } => "mov",
+            _ => unimplemented!("{:?}", self),
         }
     }
 
     pub fn to_asm(&self) -> String {
-        format!("{} {}, {}", self.opcode_name(), self.dest(), self.src())
+        match self {
+            Instruction_::RegisterMemoryMov {
+                d,
+                wide,
+                r#mod,
+                reg,
+                rm,
+                disp,
+                bytes_used,
+            } => {
+                let rm_reg = if *r#mod == Mode::Register {
+                    Register::from_bits(rm, *wide).to_string()
+                } else {
+                    let effective_address = match rm {
+                        [false, false, false] => "bx + si",
+                        [false, false, true] => "bx + di",
+                        [false, true, false] => "bp + si",
+                        [false, true, true] => "bp + di",
+                        [true, false, false] => "si",
+                        [true, false, true] => "di",
+                        [true, true, false] => todo!("{:?}", self),
+                        [true, true, true] => "bx",
+                    };
+
+                    let disp_str = if *r#mod == Mode::Memory {
+                        String::from("")
+                    } else {
+                        format!(" + {}", disp.unwrap())
+                    };
+
+                    format!("[{}{}]", effective_address, "")
+                };
+                let (src, dest) = if *d {
+                    (rm_reg, reg.to_string())
+                } else {
+                    (reg.to_string(), rm_reg)
+                };
+                format!("{} {}, {}", self.opcode_name(), dest, src)
+            }
+
+            Instruction_::ImmediateRegisterMov { reg, data, .. } => {
+                format!("{} {}, {}", self.opcode_name(), reg, data)
+            }
+        }
+    }
+
+    fn try_parse_register_memory_mov(
+        bits: &BitSlice<u8, Msb0>,
+    ) -> Result<Self, ParseInstructionError> {
+        if bits.len() < 16 {
+            return Err(ParseInstructionError::new(
+                "Incoming bits has less than 16 bits!",
+            ));
+        };
+        let d = bits[6];
+        let wide = bits[7];
+        let r#mod = Mode::from(&[bits[8], bits[9]]);
+        let reg = Register::from_bits(&[bits[10], bits[11], bits[12]], wide);
+        let rm = [bits[13], bits[14], bits[15]];
+        let mut disp = None;
+        let mut bytes_used = 2;
+
+        match r#mod {
+            Mode::Bit8 => {
+                if bits.len() < 24 {
+                    return Err(ParseInstructionError::new(
+                        "Incoming instruction has an 8 bit displacement, but the `disp_lo` byte wasn't provided. Requires at least 24 bits.",
+                    ));
+                }
+                disp = Some(bits[16..24].load::<u8>() as u16);
+                bytes_used = 3;
+            }
+            Mode::Bit16 => {
+                if bits.len() < 32 {
+                    return Err(ParseInstructionError::new(
+                        "Incoming instruction has an 16 bit displacement, but the `disp_hi` byte wasn't provided. Requires at least 32 bits.",
+                    ));
+                }
+                disp = Some(bits[16..].load::<u16>());
+                bytes_used = 4;
+            }
+            _ => {}
+        }
+
+        Ok(Self::RegisterMemoryMov {
+            d,
+            wide,
+            r#mod,
+            reg,
+            rm,
+            disp,
+            bytes_used,
+        })
+    }
+
+    fn try_parse_immediate_register_mov(
+        bits: &BitSlice<u8, Msb0>,
+    ) -> Result<Instruction_, ParseInstructionError> {
+        if bits.len() < 16 {
+            return Err(ParseInstructionError::new(
+                "Incoming bits has less than 16 bits!",
+            ));
+        };
+        let wide = bits[4];
+        let reg = Register::from_bits(&[bits[5], bits[6], bits[7]], wide);
+        let mut bytes_used = 2;
+        let data = if wide {
+            if bits.len() < 24 {
+                return Err(ParseInstructionError::new(
+                    "Expected wide data. Received less than 24 bits.",
+                ));
+            };
+            bytes_used = 3;
+            bits[8..24].load::<u16>()
+        } else {
+            bits[8..16].load::<u8>() as u16
+        };
+
+        Ok(Self::ImmediateRegisterMov {
+            wide,
+            reg,
+            data,
+            bytes_used,
+        })
     }
 }
 
@@ -145,52 +266,15 @@ impl ParseInstructionError {
     }
 }
 
-impl<'a> TryFrom<&'a BitSlice<u8, Msb0>> for Instruction {
+impl<'a> TryFrom<&'a BitSlice<u8, Msb0>> for Instruction_ {
     type Error = ParseInstructionError;
 
     fn try_from(bits: &BitSlice<u8, Msb0>) -> Result<Self, Self::Error> {
-        if bits.len() < 16 {
-            return Err(ParseInstructionError::new(
-                "Incoming bits has less than 16 bits!",
-            ));
+        match (bits[0], bits[1], bits[2], bits[3], bits[4], bits[5]) {
+            (true, false, false, false, true, false) => Self::try_parse_register_memory_mov(bits),
+            (true, false, true, true, _, _) => Self::try_parse_immediate_register_mov(bits),
+            _ => unimplemented!("{:?}", bits),
         }
-        let mut instr = Self {
-            opcode: [bits[0], bits[1], bits[2], bits[3], bits[4], bits[5]],
-            d: bits[6],
-            w: bits[7],
-            r#mod: Mode::from(&[bits[8], bits[9]]),
-            reg: [bits[10], bits[11], bits[12]],
-            rm: [bits[13], bits[14], bits[15]],
-            disp: None,
-            bytes_used: 2,
-        };
-
-        match instr.r#mod {
-            Mode::Memory => {
-                todo!()
-            }
-            Mode::Bit8 => {
-                if bits.len() < 24 {
-                    return Err(ParseInstructionError::new(
-                        "Incoming instruction has an 8 bit displacement, but the `disp_lo` byte wasn't provided. Requires at least 24 bits.",
-                    ));
-                }
-                instr.disp = Some(bits[16..].load::<u8>() as u16);
-                instr.bytes_used += 1;
-            }
-            Mode::Bit16 => {
-                if bits.len() < 32 {
-                    return Err(ParseInstructionError::new(
-                        "Incoming instruction has an 16 bit displacement, but the `disp_hi` byte wasn't provided. Requires at least 32 bits.",
-                    ));
-                }
-                instr.disp = Some(bits[16..].load::<u16>());
-                instr.bytes_used += 2;
-            }
-            Mode::Register => {}
-        }
-
-        Ok(instr)
     }
 }
 
@@ -206,11 +290,11 @@ pub fn disassemble(input: &BitSlice<u8, Msb0>) -> String {
             16
         };
         let current = &input[i..i + end];
-        let instruction = Instruction::try_from(current).unwrap();
+        let instruction = Instruction_::try_from(current).unwrap();
 
         strs.push(instruction.to_asm().to_string());
 
-        i += instruction.bytes_used as usize * 8;
+        i += instruction.bytes() as usize * 8;
     }
     strs.join("\n")
 }
@@ -239,7 +323,7 @@ mod tests {
             .skip_while(|l| !l.starts_with("bits"))
             .skip(2);
         let mut result = lines.next().unwrap().to_string();
-        for line in lines {
+        for line in lines.filter(|l| !l.starts_with(";") && !l.is_empty()) {
             result.push_str("\n");
             result.push_str(line);
         }
@@ -265,6 +349,18 @@ mod tests {
         let input = std::fs::read("perfaware/part1/listing_0038_many_register_mov").unwrap();
         let bits = input.view_bits::<Msb0>();
         let expected = skip_preamble("perfaware/part1/listing_0038_many_register_mov.asm");
+        // Act
+        let actual = disassemble(bits);
+        // Assert
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn correctly_handles_more_movs() {
+        // Arrange
+        let input = std::fs::read("perfaware/part1/listing_0039_more_movs").unwrap();
+        let bits = input.view_bits::<Msb0>();
+        let expected = skip_preamble("perfaware/part1/listing_0039_more_movs.asm");
         // Act
         let actual = disassemble(bits);
         // Assert
