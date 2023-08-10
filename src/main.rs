@@ -107,14 +107,24 @@ impl Instruction {
 }
 
 #[derive(Debug)]
-struct ParseInstructionError;
+struct ParseInstructionError {
+    pub msg: &'static str,
+}
+
+impl ParseInstructionError {
+    pub fn new(msg: &'static str) -> Self {
+        Self { msg }
+    }
+}
 
 impl<'a> TryFrom<&'a BitSlice<u8, Msb0>> for Instruction {
     type Error = ParseInstructionError;
 
     fn try_from(bits: &'a BitSlice<u8, Msb0>) -> Result<Self, Self::Error> {
         if bits.len() < 16 {
-            return Err(ParseInstructionError);
+            return Err(ParseInstructionError::new(
+                "Incoming bits has less than 16 bits!",
+            ));
         }
         Ok(Self {
             opcode: [bits[0], bits[1], bits[2], bits[3], bits[4], bits[5]],
@@ -138,7 +148,7 @@ pub fn disassemble(input: &BitSlice<u8, Msb0>) -> String {
     strs.join("\n")
 }
 
-fn _main() {
+fn main() {
     let input = std::fs::read("perfaware/part1/listing_0037_single_register_mov").unwrap();
     let bits = input.view_bits::<Msb0>();
     let output = disassemble(bits);
@@ -148,19 +158,6 @@ fn _main() {
     let bits = input.view_bits::<Msb0>();
     let output = disassemble(bits);
     println!("{output}");
-}
-
-fn main() {
-    unsafe {
-        let x: u8 = 10;
-        let y: u8 = 255;
-        println!("{}", y.unchecked_shl(17));
-        println!("{}", x);
-        let z: *const u8 = &y;
-        let x_ptr: *const u8 = &x;
-        println!("{:?}", z);
-        println!("{:?}", x_ptr);
-    }
 }
 
 #[cfg(test)]
