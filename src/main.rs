@@ -62,13 +62,46 @@ impl Display for Register {
     }
 }
 
+#[derive(Debug)]
+enum Mode {
+    Memory,
+    Bit8,
+    Bit16,
+    Register,
+}
+
+#[derive(Debug)]
+struct ParseModeError {
+    pub msg: &'static str,
+}
+
+impl ParseModeError {
+    pub fn new(msg: &'static str) -> Self {
+        Self { msg }
+    }
+}
+
+impl<'a> From<&'a [bool; 2]> for Mode {
+    fn from(bits: &'a [bool; 2]) -> Self {
+        match *bits {
+            [true, true] => Mode::Register,
+            [true, false] => Mode::Bit16,
+            [false, true] => Mode::Bit8,
+            [false, false] => Mode::Memory,
+        }
+    }
+}
+
+#[derive(Debug)]
 struct Instruction {
     pub opcode: [bool; 6],
     pub d: bool,
     pub w: bool,
-    pub r#mod: [bool; 2],
+    pub r#mod: Mode,
     pub reg: [bool; 3],
     pub rm: [bool; 3],
+    pub disp: Option<u16>,
+    pub bytes_used: u8,
 }
 
 impl Instruction {
@@ -80,7 +113,7 @@ impl Instruction {
         }
     }
 
-    pub fn src_reg(&self) -> Register {
+    pub fn src(&self) -> Register {
         if self.d {
             Register::from_bits(&self.rm, self.w)
         } else {
@@ -88,7 +121,7 @@ impl Instruction {
         }
     }
 
-    pub fn dest_reg(&self) -> Register {
+    pub fn dest(&self) -> Register {
         if self.d {
             Register::from_bits(&self.reg, self.w)
         } else {
@@ -97,12 +130,7 @@ impl Instruction {
     }
 
     pub fn to_asm(&self) -> String {
-        format!(
-            "{} {}, {}",
-            self.opcode_name(),
-            self.dest_reg(),
-            self.src_reg()
-        )
+        format!("{} {}, {}", self.opcode_name(), self.dest(), self.src())
     }
 }
 
@@ -120,30 +148,69 @@ impl ParseInstructionError {
 impl<'a> TryFrom<&'a BitSlice<u8, Msb0>> for Instruction {
     type Error = ParseInstructionError;
 
-    fn try_from(bits: &'a BitSlice<u8, Msb0>) -> Result<Self, Self::Error> {
+    fn try_from(bits: &BitSlice<u8, Msb0>) -> Result<Self, Self::Error> {
         if bits.len() < 16 {
             return Err(ParseInstructionError::new(
                 "Incoming bits has less than 16 bits!",
             ));
         }
-        Ok(Self {
+        let mut instr = Self {
             opcode: [bits[0], bits[1], bits[2], bits[3], bits[4], bits[5]],
             d: bits[6],
             w: bits[7],
-            r#mod: [bits[8], bits[9]],
+            r#mod: Mode::from(&[bits[8], bits[9]]),
             reg: [bits[10], bits[11], bits[12]],
             rm: [bits[13], bits[14], bits[15]],
-        })
+            disp: None,
+            bytes_used: 2,
+        };
+
+        match instr.r#mod {
+            Mode::Memory => {
+                todo!()
+            }
+            Mode::Bit8 => {
+                if bits.len() < 24 {
+                    return Err(ParseInstructionError::new(
+                        "Incoming instruction has an 8 bit displacement, but the `disp_lo` byte wasn't provided. Requires at least 24 bits.",
+                    ));
+                }
+                instr.disp = Some(bits[16..].load::<u8>() as u16);
+                instr.bytes_used += 1;
+            }
+            Mode::Bit16 => {
+                if bits.len() < 32 {
+                    return Err(ParseInstructionError::new(
+                        "Incoming instruction has an 16 bit displacement, but the `disp_hi` byte wasn't provided. Requires at least 32 bits.",
+                    ));
+                }
+                instr.disp = Some(bits[16..].load::<u16>());
+                instr.bytes_used += 2;
+            }
+            Mode::Register => {}
+        }
+
+        Ok(instr)
     }
 }
 
 pub fn disassemble(input: &BitSlice<u8, Msb0>) -> String {
     let mut strs: Vec<String> = Vec::new();
-    for i in (0..input.len()).step_by(16) {
-        let current = &input[i..i + 16];
+    let mut i = 0;
+    while i < input.len() {
+        let end = if input[i..].len() >= 32 {
+            32
+        } else if input[i..].len() >= 24 {
+            24
+        } else {
+            16
+        };
+        let current = &input[i..i + end];
         let instruction = Instruction::try_from(current).unwrap();
 
-        strs.push(format!("{}", instruction.to_asm()));
+        strs.push(instruction.to_asm().to_string());
+
+        i += instruction.bytes_used as usize * 8;
     }
     strs.join("\n")
 }
