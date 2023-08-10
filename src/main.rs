@@ -65,8 +65,8 @@ impl Display for Register {
 #[derive(Debug, PartialEq, Eq)]
 enum Mode {
     Memory,
-    Bit8,
-    Bit16,
+    Displace8Bits,
+    Displace16Bits,
     Register,
 }
 
@@ -85,8 +85,8 @@ impl<'a> From<&'a [bool; 2]> for Mode {
     fn from(bits: &'a [bool; 2]) -> Self {
         match *bits {
             [true, true] => Mode::Register,
-            [true, false] => Mode::Bit16,
-            [false, true] => Mode::Bit8,
+            [true, false] => Mode::Displace16Bits,
+            [false, true] => Mode::Displace8Bits,
             [false, false] => Mode::Memory,
         }
     }
@@ -161,10 +161,15 @@ impl Instruction {
                     let disp_str = if *r#mod == Mode::Memory {
                         String::from("")
                     } else {
-                        format!(" + {}", disp.unwrap())
+                        let val = disp.unwrap();
+                        if val == 0 {
+                            String::from("")
+                        } else {
+                            format!(" + {}", disp.unwrap())
+                        }
                     };
 
-                    format!("[{}{}]", effective_address, "")
+                    format!("[{}{}]", effective_address, disp_str)
                 };
                 let (src, dest) = if *d {
                     (rm_reg, reg.to_string())
@@ -174,8 +179,14 @@ impl Instruction {
                 format!("{} {}, {}", self.opcode_name(), dest, src)
             }
 
-            Instruction::ImmediateRegisterMov { reg, data, .. } => {
-                format!("{} {}, {}", self.opcode_name(), reg, data)
+            Instruction::ImmediateRegisterMov {
+                reg, data, wide, ..
+            } => {
+                if *wide {
+                    format!("{} {}, {}", self.opcode_name(), reg, *data as i16)
+                } else {
+                    format!("{} {}, {}", self.opcode_name(), reg, *data as i8)
+                }
             }
         }
     }
@@ -197,7 +208,7 @@ impl Instruction {
         let mut bytes_used = 2;
 
         match r#mod {
-            Mode::Bit8 => {
+            Mode::Displace8Bits => {
                 if bits.len() < 24 {
                     return Err(ParseInstructionError::new(
                         "Incoming instruction has an 8 bit displacement, but the `disp_lo` byte wasn't provided. Requires at least 24 bits.",
@@ -206,7 +217,7 @@ impl Instruction {
                 disp = Some(bits[16..24].load::<u8>() as u16);
                 bytes_used = 3;
             }
-            Mode::Bit16 => {
+            Mode::Displace16Bits => {
                 if bits.len() < 32 {
                     return Err(ParseInstructionError::new(
                         "Incoming instruction has an 16 bit displacement, but the `disp_hi` byte wasn't provided. Requires at least 32 bits.",
@@ -214,6 +225,17 @@ impl Instruction {
                 }
                 disp = Some(bits[16..].load::<u16>());
                 bytes_used = 4;
+            }
+            Mode::Memory => {
+                if rm == [true, true, false] {
+                    if bits.len() < 32 {
+                        return Err(ParseInstructionError::new(
+                        "Incoming instruction has an 16 bit displacement, but the `disp_hi` byte wasn't provided. Requires at least 32 bits.",
+                    ));
+                    }
+                    disp = Some(bits[16..].load::<u16>());
+                    bytes_used = 4;
+                }
             }
             _ => {}
         }
@@ -306,16 +328,16 @@ pub fn disassemble(input: &BitSlice<u8, Msb0>) -> String {
 }
 
 fn main() {
-    let input = std::fs::read("perfaware/part1/listing_0037_single_register_mov").unwrap();
-    let bits = input.view_bits::<Msb0>();
-    let output = disassemble(bits);
-    println!("{output}");
-    println!("----------");
-    let input = std::fs::read("perfaware/part1/listing_0038_many_register_mov").unwrap();
-    let bits = input.view_bits::<Msb0>();
-    let output = disassemble(bits);
-    println!("{output}");
-    println!("----------");
+    // let input = std::fs::read("perfaware/part1/listing_0037_single_register_mov").unwrap();
+    // let bits = input.view_bits::<Msb0>();
+    // let output = disassemble(bits);
+    // println!("{output}");
+    // println!("----------");
+    // let input = std::fs::read("perfaware/part1/listing_0038_many_register_mov").unwrap();
+    // let bits = input.view_bits::<Msb0>();
+    // let output = disassemble(bits);
+    // println!("{output}");
+    // println!("----------");
     let input = std::fs::read("perfaware/part1/listing_0039_more_movs").unwrap();
     let bits = input.view_bits::<Msb0>();
     let output = disassemble(bits);
