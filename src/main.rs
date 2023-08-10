@@ -62,7 +62,7 @@ impl Display for Register {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 enum Mode {
     Memory,
     Displace8Bits,
@@ -111,6 +111,51 @@ enum Instruction {
     },
 }
 
+fn deserialize_effective_address(rm: &[bool; 3], r#mod: Mode, disp: Option<u16>) -> String {
+    match rm {
+        [false, false, false] => "bx + si".to_string(),
+        [false, false, true] => "bx + di".to_string(),
+        [false, true, false] => "bp + si".to_string(),
+        [false, true, true] => "bp + di".to_string(),
+        [true, false, false] => "si".to_string(),
+        [true, false, true] => "di".to_string(),
+        [true, true, false] => {
+            if r#mod == Mode::Memory {
+                return format!("[{}]", disp.unwrap());
+            }
+            "bp".to_string()
+        }
+        [true, true, true] => "bx".to_string(),
+    }
+}
+
+fn deserialize_displacement(
+    r#mod: Mode,
+    disp: Option<u16>,
+    wide: bool,
+    signed_output: bool,
+) -> String {
+    if r#mod == Mode::Memory {
+        return String::from("");
+    }
+    let val = disp.unwrap();
+    if val == 0 {
+        return String::from("");
+    }
+    if !signed_output {
+        return format!(" + {}", val);
+    }
+    if wide {
+        let signed_val = val as i16;
+        let op = if signed_val < 0 { "-" } else { "+" };
+        format!(" {} {}", op, signed_val.abs())
+    } else {
+        let signed_val = val as i8;
+        let op = if signed_val < 0 { "-" } else { "+" };
+        format!(" {} {}", op, signed_val.abs())
+    }
+}
+
 impl Instruction {
     pub fn bytes(&self) -> u8 {
         match self {
@@ -127,7 +172,7 @@ impl Instruction {
         }
     }
 
-    pub fn to_asm(&self) -> String {
+    pub fn to_asm(&self, signed_output: bool) -> String {
         match self {
             Instruction::RegisterMemoryMov {
                 d,
@@ -141,33 +186,8 @@ impl Instruction {
                 let rm_reg = if *r#mod == Mode::Register {
                     Register::from_bits(rm, *wide).to_string()
                 } else {
-                    let effective_address = match rm {
-                        [false, false, false] => "bx + si".to_string(),
-                        [false, false, true] => "bx + di".to_string(),
-                        [false, true, false] => "bp + si".to_string(),
-                        [false, true, true] => "bp + di".to_string(),
-                        [true, false, false] => "si".to_string(),
-                        [true, false, true] => "di".to_string(),
-                        [true, true, false] => {
-                            if *r#mod == Mode::Memory {
-                                format!("[{}]", disp.unwrap())
-                            } else {
-                                "bp".to_string()
-                            }
-                        }
-                        [true, true, true] => "bx".to_string(),
-                    };
-
-                    let disp_str = if *r#mod == Mode::Memory {
-                        String::from("")
-                    } else {
-                        let val = disp.unwrap();
-                        if val == 0 {
-                            String::from("")
-                        } else {
-                            format!(" + {}", disp.unwrap())
-                        }
-                    };
+                    let effective_address = deserialize_effective_address(rm, *r#mod, *disp);
+                    let disp_str = deserialize_displacement(*r#mod, *disp, *wide, signed_output);
 
                     if effective_address.starts_with("[") {
                         effective_address
@@ -324,7 +344,7 @@ pub fn disassemble(input: &BitSlice<u8, Msb0>) -> String {
         let current = &input[bit_ptr..bit_ptr + end];
         let instruction = Instruction::try_from(current).unwrap();
 
-        strs.push(instruction.to_asm().to_string());
+        strs.push(instruction.to_asm(false).to_string());
 
         bit_ptr += instruction.bytes() as usize * 8;
     }
