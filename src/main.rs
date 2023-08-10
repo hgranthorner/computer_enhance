@@ -148,7 +148,13 @@ impl Instruction_ {
                         [false, true, true] => "bp + di",
                         [true, false, false] => "si",
                         [true, false, true] => "di",
-                        [true, true, false] => todo!("{:?}", self),
+                        [true, true, false] => {
+                            if *r#mod == Mode::Register {
+                                todo!()
+                            } else {
+                                "bp"
+                            }
+                        }
                         [true, true, true] => "bx",
                     };
 
@@ -318,17 +324,11 @@ mod tests {
     fn skip_preamble(s: &str) -> String {
         let contents = std::fs::read_to_string(s).unwrap();
 
-        let mut lines = contents
+        contents
             .lines()
-            .skip_while(|l| !l.starts_with("bits"))
-            .skip(2);
-        let mut result = lines.next().unwrap().to_string();
-        for line in lines.filter(|l| !l.starts_with(";") && !l.is_empty()) {
-            result.push_str("\n");
-            result.push_str(line);
-        }
-
-        result
+            .filter(|l| !l.is_empty() && !l.starts_with("bits") && !l.starts_with(";"))
+            .collect::<Vec<&str>>()
+            .join("\n")
     }
 
     #[test]
