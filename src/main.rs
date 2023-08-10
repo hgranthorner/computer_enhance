@@ -142,20 +142,20 @@ impl Instruction {
                     Register::from_bits(rm, *wide).to_string()
                 } else {
                     let effective_address = match rm {
-                        [false, false, false] => "bx + si",
-                        [false, false, true] => "bx + di",
-                        [false, true, false] => "bp + si",
-                        [false, true, true] => "bp + di",
-                        [true, false, false] => "si",
-                        [true, false, true] => "di",
+                        [false, false, false] => "bx + si".to_string(),
+                        [false, false, true] => "bx + di".to_string(),
+                        [false, true, false] => "bp + si".to_string(),
+                        [false, true, true] => "bp + di".to_string(),
+                        [true, false, false] => "si".to_string(),
+                        [true, false, true] => "di".to_string(),
                         [true, true, false] => {
-                            if *r#mod == Mode::Register {
-                                todo!()
+                            if *r#mod == Mode::Memory {
+                                format!("[{}]", disp.unwrap())
                             } else {
-                                "bp"
+                                "bp".to_string()
                             }
                         }
-                        [true, true, true] => "bx",
+                        [true, true, true] => "bx".to_string(),
                     };
 
                     let disp_str = if *r#mod == Mode::Memory {
@@ -169,7 +169,11 @@ impl Instruction {
                         }
                     };
 
-                    format!("[{}{}]", effective_address, disp_str)
+                    if effective_address.starts_with("[") {
+                        effective_address
+                    } else {
+                        format!("[{}{}]", effective_address, disp_str)
+                    }
                 };
                 let (src, dest) = if *d {
                     (rm_reg, reg.to_string())
