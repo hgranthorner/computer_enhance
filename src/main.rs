@@ -417,4 +417,19 @@ mod tests {
         // Assert
         assert_eq!(actual, expected);
     }
+
+    #[test]
+    fn correctly_handles_more_movs_challenge() {
+        // Arrange
+        let binary_file = "perfaware/part1/listing_0040_challenge_movs";
+        let asm_file = "perfaware/part1/listing_0040_challenge_movs.asm";
+        let input = std::fs::read(binary_file).unwrap();
+        let bits = input.view_bits::<Msb0>();
+        let expected = skip_preamble(asm_file);
+        // Act
+        let actual = disassemble(bits, false);
+        // Assert
+        assert_eq!(actual, expected);
+    }
+
 }
