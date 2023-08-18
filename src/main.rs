@@ -129,12 +129,7 @@ fn deserialize_effective_address(rm: &[bool; 3], r#mod: Mode, disp: Option<u16>)
     }
 }
 
-fn deserialize_displacement(
-    r#mod: Mode,
-    disp: Option<u16>,
-    wide: bool,
-    signed_output: bool,
-) -> String {
+fn deserialize_displacement(r#mod: Mode, disp: Option<u16>, wide: bool) -> String {
     if r#mod == Mode::Memory {
         return String::from("");
     }
@@ -142,15 +137,12 @@ fn deserialize_displacement(
     if val == 0 {
         return String::from("");
     }
-    if !signed_output {
-        return format!(" + {}", val);
-    }
     if wide {
-        let signed_val = val as i16;
+        let signed_val = val as i32;
         let op = if signed_val < 0 { "-" } else { "+" };
         format!(" {} {}", op, signed_val.abs())
     } else {
-        let signed_val = val as i8;
+        let signed_val = val as i16;
         let op = if signed_val < 0 { "-" } else { "+" };
         format!(" {} {}", op, signed_val.abs())
     }
@@ -172,7 +164,7 @@ impl Instruction {
         }
     }
 
-    pub fn to_asm(&self, signed_output: bool) -> String {
+    pub fn to_asm(&self) -> String {
         match self {
             Instruction::RegisterMemoryMov {
                 d,
@@ -187,7 +179,7 @@ impl Instruction {
                     Register::from_bits(rm, *wide).to_string()
                 } else {
                     let effective_address = deserialize_effective_address(rm, *r#mod, *disp);
-                    let disp_str = deserialize_displacement(*r#mod, *disp, *wide, signed_output);
+                    let disp_str = deserialize_displacement(*r#mod, *disp, *wide);
 
                     if effective_address.starts_with('[') {
                         effective_address
@@ -331,7 +323,7 @@ impl<'a> TryFrom<&'a BitSlice<u8, Msb0>> for Instruction {
 }
 
 pub fn disassemble(input: &BitSlice<u8, Msb0>, signed_output: bool) -> String {
-    let mut strs: Vec<String> = Vec::new();
+    let mut strs: Vec<String> = vec!["bits 16".to_string()];
     let mut bit_ptr = 0;
     while bit_ptr < input.len() {
         let end = if input[bit_ptr..].len() >= 32 {
@@ -344,7 +336,7 @@ pub fn disassemble(input: &BitSlice<u8, Msb0>, signed_output: bool) -> String {
         let current = &input[bit_ptr..bit_ptr + end];
         let instruction = Instruction::try_from(current).unwrap();
 
-        strs.push(instruction.to_asm(signed_output).to_string());
+        strs.push(instruction.to_asm());
 
         bit_ptr += instruction.bytes() as usize * 8;
     }
@@ -403,7 +395,11 @@ mod tests {
         // Act
         let actual = disassemble(bits, false);
         // Assert
-        compare(&actual, "0037", "perfaware/part1/listing_0037_single_register_mov")
+        compare(
+            &actual,
+            "0037",
+            "perfaware/part1/listing_0037_single_register_mov",
+        )
     }
 
     #[test]
@@ -414,7 +410,11 @@ mod tests {
         // Act
         let actual = disassemble(bits, false);
         // Assert
-        compare(&actual, "0038", "perfaware/part1/listing_0038_many_register_mov")
+        compare(
+            &actual,
+            "0038",
+            "perfaware/part1/listing_0038_many_register_mov",
+        )
     }
 
     #[test]
@@ -437,6 +437,10 @@ mod tests {
         // Act
         let actual = disassemble(bits, false);
         // Assert
-        compare(&actual, "0040", "perfaware/part1/listing_0040_challenge_movs")
+        compare(
+            &actual,
+            "0040",
+            "perfaware/part1/listing_0040_challenge_movs",
+        )
     }
 }
