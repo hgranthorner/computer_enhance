@@ -106,6 +106,12 @@ enum Instruction {
         data: u16,
         bytes_used: u8,
     },
+    MemoryAccumMov {
+        to_memory: bool,
+        wide: bool,
+        addr: u16,
+        bytes_used: u8,
+    },
 }
 
 fn deserialize_effective_address(rm: &[bool; 3], r#mod: Mode, disp: Option<u16>) -> String {
@@ -152,6 +158,7 @@ impl Instruction {
             Instruction::RegisterMemoryMov { bytes_used, .. } => *bytes_used,
             Instruction::ImmediateRegisterMov { bytes_used, .. } => *bytes_used,
             Instruction::ImmediateRegisterMemoryMov { bytes_used, .. } => *bytes_used,
+            Instruction::MemoryAccumMov { bytes_used, .. } => *bytes_used,
         }
     }
 
@@ -160,7 +167,7 @@ impl Instruction {
             Instruction::RegisterMemoryMov { .. } => "mov",
             Instruction::ImmediateRegisterMov { .. } => "mov",
             Instruction::ImmediateRegisterMemoryMov { .. } => "mov",
-            _ => unimplemented!("{:?}", self),
+            Instruction::MemoryAccumMov { .. } => "mov",
         }
     }
 
@@ -230,6 +237,21 @@ impl Instruction {
 
                 format!("{} {}, {}", self.opcode_name(), dest, src)
             }
+
+            Instruction::MemoryAccumMov {
+                to_memory,
+                wide,
+                addr,
+                bytes_used,
+            } => {
+                    let (src, dest) = if *to_memory {
+                        ("ax".to_string(), format!("[{}]", addr))
+                    } else {
+                        (format!("[{}]", addr), "ax".to_string())
+                    };
+
+                    format!("{} {}, {}", self.opcode_name(), dest, src)
+                }
         }
     }
 
@@ -392,6 +414,25 @@ impl Instruction {
             bytes_used,
         })
     }
+
+    fn try_parse_memory_accum_mov(
+        bits: &BitSlice<u8, Msb0>,
+    ) -> Result<Instruction, ParseInstructionError> {
+        let to_memory = bits[6];
+        let wide = bits[7];
+        let addr = if wide {
+            bits[8..24].load::<u16>()
+        } else {
+            bits[8..16].load::<u8>() as u16
+        };
+        let bytes_used = if wide { 3 } else { 2 };
+        Ok(Self::MemoryAccumMov {
+            to_memory,
+            wide,
+            addr,
+            bytes_used,
+        })
+    }
 }
 
 #[derive(Debug)]
@@ -409,13 +450,18 @@ impl<'a> TryFrom<&'a BitSlice<u8, Msb0>> for Instruction {
     type Error = ParseInstructionError;
 
     fn try_from(bits: &BitSlice<u8, Msb0>) -> Result<Self, Self::Error> {
-        match (bits[0], bits[1], bits[2], bits[3], bits[4], bits[5]) {
-            (true, false, false, false, true, false) => Self::try_parse_register_memory_mov(bits),
-            (true, false, true, true, _, _) => Self::try_parse_immediate_register_mov(bits),
+        match (
+            bits[0], bits[1], bits[2], bits[3], bits[4], bits[5], bits[6],
+        ) {
+            (true, false, false, false, true, false, _) => {
+                Self::try_parse_register_memory_mov(bits)
+            }
+            (true, false, true, true, _, _, _) => Self::try_parse_immediate_register_mov(bits),
             // NOTE: we may need 7 bits for this one
-            (true, true, false, false, false, true) => {
+            (true, true, false, false, false, true, true) => {
                 Self::try_parse_immediate_register_memory_mov(bits)
             }
+            (true, false, true, false, false, false, _) => Self::try_parse_memory_accum_mov(bits),
             _ => unimplemented!("This opcode is unimplemented: {:?}", bits),
         }
     }
@@ -439,7 +485,9 @@ pub fn disassemble(input: &BitSlice<u8, Msb0>, signed_output: bool) -> String {
         let current = &input[bit_ptr..bit_ptr + end];
         let instruction = Instruction::try_from(current).unwrap();
 
-        strs.push(instruction.to_asm());
+        let asm = instruction.to_asm();
+        println!("{}", asm);
+        strs.push(asm);
 
         bit_ptr += instruction.bytes() as usize * 8;
     }
