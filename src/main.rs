@@ -325,7 +325,7 @@ impl<'a> TryFrom<&'a BitSlice<u8, Msb0>> for Instruction {
         match (bits[0], bits[1], bits[2], bits[3], bits[4], bits[5]) {
             (true, false, false, false, true, false) => Self::try_parse_register_memory_mov(bits),
             (true, false, true, true, _, _) => Self::try_parse_immediate_register_mov(bits),
-            _ => unimplemented!("{:?}", bits),
+            _ => unimplemented!("This opcode is unimplemented: {:?}", bits),
         }
     }
 }
@@ -382,16 +382,28 @@ mod tests {
             .join("\n")
     }
 
+    fn compare(actual: &str, listing: &str, expected_bin_path: &str) {
+        let actual_asm_path = format!("tmp/{}_actual.asm", listing);
+        let actual_bin_path = format!("tmp/{}_actual", listing);
+        std::fs::write(&actual_asm_path, &actual);
+        std::process::Command::new("nasm")
+            .arg(&actual_asm_path)
+            .output()
+            .unwrap();
+        let actual_contents = std::fs::read(actual_bin_path).unwrap();
+        let expected_contents = std::fs::read(expected_bin_path).unwrap();
+        assert_eq!(actual_contents, expected_contents);
+    }
+
     #[test]
     fn correctly_handles_single_register_mov() {
         // Arrange
         let input = std::fs::read("perfaware/part1/listing_0037_single_register_mov").unwrap();
         let bits = input.view_bits::<Msb0>();
-        let expected = skip_preamble("perfaware/part1/listing_0037_single_register_mov.asm");
         // Act
         let actual = disassemble(bits, false);
         // Assert
-        assert_eq!(actual, expected);
+        compare(&actual, "0037", "perfaware/part1/listing_0037_single_register_mov")
     }
 
     #[test]
@@ -399,11 +411,10 @@ mod tests {
         // Arrange
         let input = std::fs::read("perfaware/part1/listing_0038_many_register_mov").unwrap();
         let bits = input.view_bits::<Msb0>();
-        let expected = skip_preamble("perfaware/part1/listing_0038_many_register_mov.asm");
         // Act
         let actual = disassemble(bits, false);
         // Assert
-        assert_eq!(actual, expected);
+        compare(&actual, "0038", "perfaware/part1/listing_0038_many_register_mov")
     }
 
     #[test]
@@ -411,25 +422,21 @@ mod tests {
         // Arrange
         let input = std::fs::read("perfaware/part1/listing_0039_more_movs").unwrap();
         let bits = input.view_bits::<Msb0>();
-        let expected = skip_preamble("perfaware/part1/listing_0039_more_movs.asm");
         // Act
         let actual = disassemble(bits, false);
         // Assert
-        assert_eq!(actual, expected);
+        compare(&actual, "0039", "perfaware/part1/listing_0039_more_movs")
     }
 
     #[test]
     fn correctly_handles_more_movs_challenge() {
         // Arrange
         let binary_file = "perfaware/part1/listing_0040_challenge_movs";
-        let asm_file = "perfaware/part1/listing_0040_challenge_movs.asm";
         let input = std::fs::read(binary_file).unwrap();
         let bits = input.view_bits::<Msb0>();
-        let expected = skip_preamble(asm_file);
         // Act
         let actual = disassemble(bits, false);
         // Assert
-        assert_eq!(actual, expected);
+        compare(&actual, "0040", "perfaware/part1/listing_0040_challenge_movs")
     }
-
 }
