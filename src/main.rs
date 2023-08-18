@@ -70,17 +70,6 @@ enum Mode {
     Register,
 }
 
-#[derive(Debug)]
-struct ParseModeError {
-    pub msg: &'static str,
-}
-
-impl ParseModeError {
-    pub fn new(msg: &'static str) -> Self {
-        Self { msg }
-    }
-}
-
 impl<'a> From<&'a [bool; 2]> for Mode {
     fn from(bits: &'a [bool; 2]) -> Self {
         match *bits {
@@ -109,6 +98,14 @@ enum Instruction {
         data: u16,
         bytes_used: u8,
     },
+    ImmediateRegisterMemoryMov {
+        wide: bool,
+        r#mod: Mode,
+        rm: [bool; 3],
+        disp: u16,
+        data: u16,
+        bytes_used: u8,
+    },
 }
 
 fn deserialize_effective_address(rm: &[bool; 3], r#mod: Mode, disp: Option<u16>) -> String {
@@ -120,6 +117,7 @@ fn deserialize_effective_address(rm: &[bool; 3], r#mod: Mode, disp: Option<u16>)
         [true, false, false] => "si".to_string(),
         [true, false, true] => "di".to_string(),
         [true, true, false] => {
+            println!("Edge case!");
             if r#mod == Mode::Memory {
                 return format!("[{}]", disp.unwrap());
             }
@@ -153,6 +151,7 @@ impl Instruction {
         match self {
             Instruction::RegisterMemoryMov { bytes_used, .. } => *bytes_used,
             Instruction::ImmediateRegisterMov { bytes_used, .. } => *bytes_used,
+            Instruction::ImmediateRegisterMemoryMov { bytes_used, .. } => *bytes_used,
         }
     }
 
@@ -204,6 +203,14 @@ impl Instruction {
                     format!("{} {}, {}", self.opcode_name(), reg, *data as i8)
                 }
             }
+            Instruction::ImmediateRegisterMemoryMov {
+                wide,
+                r#mod,
+                rm,
+                disp,
+                data,
+                ..
+            } => todo!(),
         }
     }
 
@@ -239,7 +246,7 @@ impl Instruction {
                         "Incoming instruction has an 16 bit displacement, but the `disp_hi` byte wasn't provided. Requires at least 32 bits.",
                     ));
                 }
-                disp = Some(bits[16..].load::<u16>());
+                disp = Some(bits[16..32].load::<u16>());
                 bytes_used = 4;
             }
             Mode::Memory => {
@@ -249,7 +256,7 @@ impl Instruction {
                         "Incoming instruction has an 16 bit displacement, but the `disp_hi` byte wasn't provided. Requires at least 32 bits.",
                     ));
                     }
-                    disp = Some(bits[16..].load::<u16>());
+                    disp = Some(bits[16..32].load::<u16>());
                     bytes_used = 4;
                 }
             }
@@ -297,6 +304,12 @@ impl Instruction {
             bytes_used,
         })
     }
+
+    fn try_parse_immediate_register_memory_mov(
+        bits: &BitSlice<u8, Msb0>,
+    ) -> Result<Instruction, ParseInstructionError> {
+        todo!();
+    }
 }
 
 #[derive(Debug)]
@@ -317,6 +330,10 @@ impl<'a> TryFrom<&'a BitSlice<u8, Msb0>> for Instruction {
         match (bits[0], bits[1], bits[2], bits[3], bits[4], bits[5]) {
             (true, false, false, false, true, false) => Self::try_parse_register_memory_mov(bits),
             (true, false, true, true, _, _) => Self::try_parse_immediate_register_mov(bits),
+            // NOTE: we may need 7 bits for this one
+            (true, true, false, false, false, true) => {
+                Self::try_parse_immediate_register_memory_mov(bits)
+            }
             _ => unimplemented!("This opcode is unimplemented: {:?}", bits),
         }
     }
@@ -326,7 +343,11 @@ pub fn disassemble(input: &BitSlice<u8, Msb0>, signed_output: bool) -> String {
     let mut strs: Vec<String> = vec!["bits 16".to_string()];
     let mut bit_ptr = 0;
     while bit_ptr < input.len() {
-        let end = if input[bit_ptr..].len() >= 32 {
+        let end = if input[bit_ptr..].len() >= 48 {
+            48
+        } else if input[bit_ptr..].len() >= 40 {
+            40
+        } else if input[bit_ptr..].len() >= 32 {
             32
         } else if input[bit_ptr..].len() >= 24 {
             24
@@ -344,16 +365,6 @@ pub fn disassemble(input: &BitSlice<u8, Msb0>, signed_output: bool) -> String {
 }
 
 fn main() {
-    // let input = std::fs::read("perfaware/part1/listing_0037_single_register_mov").unwrap();
-    // let bits = input.view_bits::<Msb0>();
-    // let output = disassemble(bits);
-    // println!("{output}");
-    // println!("----------");
-    // let input = std::fs::read("perfaware/part1/listing_0038_many_register_mov").unwrap();
-    // let bits = input.view_bits::<Msb0>();
-    // let output = disassemble(bits);
-    // println!("{output}");
-    // println!("----------");
     let input = std::fs::read("perfaware/part1/listing_0039_more_movs").unwrap();
     let bits = input.view_bits::<Msb0>();
     let output = disassemble(bits, false);
