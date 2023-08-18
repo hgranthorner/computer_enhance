@@ -102,7 +102,7 @@ enum Instruction {
         wide: bool,
         r#mod: Mode,
         rm: [bool; 3],
-        disp: u16,
+        disp: Option<u16>,
         data: u16,
         bytes_used: u8,
     },
@@ -159,6 +159,7 @@ impl Instruction {
         match self {
             Instruction::RegisterMemoryMov { .. } => "mov",
             Instruction::ImmediateRegisterMov { .. } => "mov",
+            Instruction::ImmediateRegisterMemoryMov { .. } => "mov",
             _ => unimplemented!("{:?}", self),
         }
     }
@@ -210,7 +211,25 @@ impl Instruction {
                 disp,
                 data,
                 ..
-            } => todo!(),
+            } => {
+                let dest = {
+                    let effective_address = deserialize_effective_address(rm, *r#mod, *disp);
+                    let disp_str = deserialize_displacement(*r#mod, *disp, *wide);
+
+                    if effective_address.starts_with('[') {
+                        effective_address
+                    } else {
+                        format!("[{}{}]", effective_address, disp_str)
+                    }
+                };
+                let src = if *wide {
+                    format!("word {}", data)
+                } else {
+                    format!("byte {}", data)
+                };
+
+                format!("{} {}, {}", self.opcode_name(), dest, src)
+            }
         }
     }
 
@@ -308,7 +327,70 @@ impl Instruction {
     fn try_parse_immediate_register_memory_mov(
         bits: &BitSlice<u8, Msb0>,
     ) -> Result<Instruction, ParseInstructionError> {
-        todo!();
+        let wide = bits[7];
+        let r#mod = Mode::from(&[bits[8], bits[9]]);
+        let rm = [bits[13], bits[14], bits[15]];
+        let (disp, data, bytes_used) = match r#mod {
+            Mode::Displace8Bits => (
+                Some(bits[16..24].load::<u8>() as u16),
+                if wide {
+                    bits[24..40].load::<u16>()
+                } else {
+                    bits[24..32].load::<u8>() as u16
+                },
+                if wide { 5 } else { 4 },
+            ),
+            Mode::Displace16Bits => (
+                Some(bits[16..32].load::<u16>()),
+                if wide {
+                    bits[32..48].load::<u16>()
+                } else {
+                    bits[32..40].load::<u8>() as u16
+                },
+                if wide { 6 } else { 5 },
+            ),
+            Mode::Memory => {
+                if rm == [true, true, false] {
+                    (
+                        Some(bits[16..32].load::<u16>()),
+                        if wide {
+                            bits[32..48].load::<u16>()
+                        } else {
+                            bits[32..40].load::<u8>() as u16
+                        },
+                        if wide { 6 } else { 5 },
+                    )
+                } else {
+                    (
+                        None,
+                        if wide {
+                            bits[16..32].load::<u16>()
+                        } else {
+                            bits[16..24].load::<u8>() as u16
+                        },
+                        if wide { 4 } else { 3 },
+                    )
+                }
+            }
+
+            Mode::Register => (
+                None,
+                if wide {
+                    bits[16..32].load::<u16>()
+                } else {
+                    bits[16..24].load::<u8>() as u16
+                },
+                if wide { 4 } else { 3 },
+            ),
+        };
+        Ok(Self::ImmediateRegisterMemoryMov {
+            wide,
+            r#mod,
+            rm,
+            disp,
+            data,
+            bytes_used,
+        })
     }
 }
 
